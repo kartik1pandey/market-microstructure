@@ -107,32 +107,47 @@ with_volumes as (
         bucket_volume * buy_fraction as buy_volume,
         bucket_volume * (1 - buy_fraction) as sell_volume
     from with_classification
-)
+),
 
-select
-    bucket_id,
-    bucket_start_ts,
-    bucket_end_ts,
+with_vpin as (
+    select
+        bucket_id,
+        bucket_start_ts,
+        bucket_end_ts,
 {% if target.type == 'bigquery' %}
-    timestamp_millis(bucket_end_ts) as bucket_end_time,
+        timestamp_millis(bucket_end_ts) as bucket_end_time,
 {% else %}
-    to_timestamp(bucket_end_ts / 1000.0) as bucket_end_time,
+        to_timestamp(bucket_end_ts / 1000.0) as bucket_end_time,
 {% endif %}
-    bucket_volume,
-    bucket_close_price,
-    price_change,
-    sigma,
-    buy_fraction,
-    buy_volume,
-    sell_volume,
-    sum(abs(buy_volume - sell_volume)) over (
-        order by bucket_id
-        rows between {{ rolling_window_buckets - 1 }} preceding and current row
-    ) / nullif(
-        sum(bucket_volume) over (
+        bucket_volume,
+        bucket_close_price,
+        price_change,
+        sigma,
+        buy_fraction,
+        buy_volume,
+        sell_volume,
+        sum(abs(buy_volume - sell_volume)) over (
             order by bucket_id
             rows between {{ rolling_window_buckets - 1 }} preceding and current row
-        ), 0
-    ) as vpin
-from with_volumes
+        ) / nullif(
+            sum(bucket_volume) over (
+                order by bucket_id
+                rows between {{ rolling_window_buckets - 1 }} preceding and current row
+            ), 0
+        ) as vpin
+    from with_volumes
+)
+
+-- vpin_regime: a simple fixed-threshold read of "how toxic does flow look right now".
+-- Thresholds (0.2 / 0.4) are a reasonable starting point, not calibrated against this
+-- specific instrument's historical VPIN distribution - worth revisiting once enough
+-- captured history exists to pick data-driven cutoffs (e.g. percentile-based).
+select
+    *,
+    case
+        when vpin < 0.2 then 'normal'
+        when vpin < 0.4 then 'elevated'
+        else 'toxic'
+    end as vpin_regime
+from with_vpin
 order by bucket_id
