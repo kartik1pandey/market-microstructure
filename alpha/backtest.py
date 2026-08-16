@@ -37,53 +37,60 @@ def naive_quote_fn(half_spread: float):
     return fn
 
 
-def simulate_market_making(
-    depth_df: pd.DataFrame, trades_df: pd.DataFrame, quote_fn, bucket: str = "1s"
-) -> pd.DataFrame:
+def simulate_market_making(depth_df: pd.DataFrame, trades_df: pd.DataFrame, quote_fn) -> pd.DataFrame:
     """quote_fn(mid_price, inventory, seconds_remaining) -> (bid, ask).
 
-    Fill assumption (a documented simplification, not realistic queue-priority execution):
-    within each time bucket, a sell-initiated trade at/below our bid fills our bid (we buy);
-    a buy-initiated trade at/above our ask fills our ask (we sell).
+    Event-driven, not fixed-time-bucketed: the quote updates on every depth tick, and each
+    trade is checked against whichever quote was live at that exact moment (the most recent
+    depth tick at/before the trade). A fixed time-bucket design (e.g. resample to 1s and hold
+    the quote for the whole second) was tried first and produced almost no fills - BTC/USDT's
+    spread is essentially always exactly $0.01 and trades cluster right at $0.005 from mid,
+    so bucketing introduces enough timing slop to miss nearly all of these close matches.
+    Event-driven matching fixes that by comparing each trade to the quote live at its own
+    timestamp, not a coarser snapshot.
+
+    Fill assumption (a documented simplification, not realistic queue-priority execution): a
+    sell-initiated trade at/below our live bid fills our bid (we buy); a buy-initiated trade
+    at/above our live ask fills our ask (we sell).
     """
-    depth = depth_df.copy()
-    depth["time"] = pd.to_datetime(depth["ts_ms"], unit="ms", utc=True)
-    mid = depth.set_index("time")["mid_price"].resample(bucket).last().ffill()
+    depth = depth_df.sort_values("ts_ms").reset_index(drop=True)
+    trades = trades_df.sort_values("ts_ms").reset_index(drop=True)
 
-    trades = trades_df.copy()
-    trades["time"] = pd.to_datetime(trades["ts_ms"], unit="ms", utc=True)
-    trades = trades.set_index("time")
+    if trades.empty or depth.empty:
+        return pd.DataFrame(columns=["time", "mid_price", "bid", "ask", "inventory", "cash", "pnl"])
 
-    session_end = mid.index[-1]
-    bucket_delta = pd.Timedelta(bucket)
+    session_end_ms = depth["ts_ms"].iloc[-1]
+    depth_ts = depth["ts_ms"].to_numpy()
+    depth_mid = depth["mid_price"].to_numpy()
 
     inventory = 0.0
     cash = 0.0
+    depth_idx = 0
     rows = []
 
-    for t, mid_price in mid.items():
+    for _, trade in trades.iterrows():
+        trade_ts = trade["ts_ms"]
+        while depth_idx + 1 < len(depth_ts) and depth_ts[depth_idx + 1] <= trade_ts:
+            depth_idx += 1
+        mid_price = depth_mid[depth_idx]
+
         # seconds remaining, NOT a 0-1 fraction - must match sigma's per-second calibration
         # units, since the AS formula's (T-t) has to be in the same time unit as sigma^2.
-        seconds_remaining = max((session_end - t).total_seconds(), 1e-6)
+        seconds_remaining = max((session_end_ms - trade_ts) / 1000.0, 1e-6)
         bid, ask = quote_fn(mid_price, inventory, seconds_remaining)
 
-        window = trades.loc[(trades.index >= t) & (trades.index < t + bucket_delta)]
-
-        sells = window[window["is_buyer_maker"] & (window["price"] <= bid)]
-        if not sells.empty:
-            fill_qty = min(float(sells["qty"].sum()), MAX_FILL_QTY)
+        if trade["is_buyer_maker"] and trade["price"] <= bid:
+            fill_qty = min(float(trade["qty"]), MAX_FILL_QTY)
             inventory += fill_qty
             cash -= fill_qty * bid
-
-        buys = window[(~window["is_buyer_maker"]) & (window["price"] >= ask)]
-        if not buys.empty:
-            fill_qty = min(float(buys["qty"].sum()), MAX_FILL_QTY)
+        elif (not trade["is_buyer_maker"]) and trade["price"] >= ask:
+            fill_qty = min(float(trade["qty"]), MAX_FILL_QTY)
             inventory -= fill_qty
             cash += fill_qty * ask
 
         rows.append(
             {
-                "time": t,
+                "time": pd.to_datetime(trade_ts, unit="ms", utc=True),
                 "mid_price": mid_price,
                 "bid": bid,
                 "ask": ask,
