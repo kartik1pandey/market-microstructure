@@ -73,3 +73,11 @@ class OrderBook:
         if self.best_bid is None or self.best_ask is None:
             return None
         return self.best_ask - self.best_bid
+
+    def top_levels(self, n: int) -> tuple[list[float], list[float], list[float], list[float]]:
+        """Returns (bid_prices, bid_qtys, ask_prices, ask_qtys) for the best n levels each side."""
+        bid_prices = [-key for key in self.bids.keys()[:n]]
+        bid_qtys = [self.bids[-price] for price in bid_prices]
+        ask_prices = list(self.asks.keys()[:n])
+        ask_qtys = [self.asks[price] for price in ask_prices]
+        return bid_prices, bid_qtys, ask_prices, ask_qtys

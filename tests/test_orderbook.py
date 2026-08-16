@@ -63,3 +63,15 @@ def test_diff_before_snapshot_raises():
     event = {"U": 1, "u": 2, "b": [], "a": []}
     with pytest.raises(SequenceGapError):
         book.apply_diff(event)
+
+
+def test_top_levels_returns_best_n_each_side_in_price_priority_order():
+    book = OrderBook(symbol="BTCUSDT")
+    book.apply_snapshot(make_snapshot())  # bids: 100.00, 99.50 / asks: 100.50, 101.00
+
+    bid_prices, bid_qtys, ask_prices, ask_qtys = book.top_levels(1)
+
+    assert bid_prices == [100.00]
+    assert bid_qtys == [1.5]
+    assert ask_prices == [100.50]
+    assert ask_qtys == [1.0]
