@@ -1,0 +1,5 @@
+# Phase 1 — ingestion only. More added in later phases (dbt, Airflow, BigQuery, backtesting).
+websockets==13.1
+pyarrow==17.0.0
+pandas==2.2.3
+python-dotenv==1.0.1
