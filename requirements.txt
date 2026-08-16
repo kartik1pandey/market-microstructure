@@ -16,3 +16,5 @@ dbt-duckdb==1.8.3
 dbt-bigquery==1.8.3
 
 great_expectations==1.20.0
+
+scipy==1.14.1
