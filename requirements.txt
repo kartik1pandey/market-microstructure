@@ -2,6 +2,9 @@ websockets==13.1
 pyarrow==17.0.0
 pandas==2.2.3
 python-dotenv==1.0.1
+sortedcontainers==2.4.0
 
 google-cloud-bigquery==3.43.0
 db-dtypes==1.7.1
+
+pytest==8.3.3
