@@ -19,7 +19,7 @@ TABLES = ["depth_ticks", "trades"]
 DEFAULT_LAKE_ROOT = Path("data/lake")
 
 
-def _read_table_as_dataframe(lake_root: Path, table: str, symbol: str) -> pd.DataFrame:
+def read_table_as_dataframe(lake_root: Path, table: str, symbol: str) -> pd.DataFrame:
     partition_dir = lake_root / table / f"symbol={symbol.upper()}"
     files = sorted(partition_dir.glob("date=*/*.parquet"))
     if not files:
@@ -47,7 +47,7 @@ def load_to_bigquery(lake_root: Path, project_id: str, dataset: str, symbol: str
 
     client = bigquery.Client(project=project_id)
     for table in TABLES:
-        df = _read_table_as_dataframe(lake_root, table, symbol)
+        df = read_table_as_dataframe(lake_root, table, symbol)
         table_ref = f"{project_id}.{dataset}.raw_{table}"
         job_config = bigquery.LoadJobConfig(write_disposition="WRITE_TRUNCATE")
         job = client.load_table_from_dataframe(df, table_ref, job_config=job_config)
