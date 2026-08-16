@@ -1,0 +1,47 @@
+services:
+  - type: worker
+    name: microstructure-ingestion
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      bash -c "echo \"$GCP_SERVICE_ACCOUNT_JSON_B64\" | base64 -d > /tmp/gcp-service-account.json &&
+      export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-service-account.json &&
+      python -m ingestion.binance.main BTCUSDT"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: PYTHONPATH
+        value: .
+      - key: LAKE_BACKEND
+        value: bigquery
+      - key: GCP_PROJECT_ID
+        value: optimum-bonbon-296801
+      - key: BIGQUERY_DATASET
+        value: market_data
+      - key: GCP_SERVICE_ACCOUNT_JSON_B64
+        sync: false
+
+  - type: cron
+    name: microstructure-pipeline
+    runtime: python
+    plan: free
+    schedule: "*/15 * * * *"
+    buildCommand: pip install -r requirements.txt
+    startCommand: >
+      bash -c "echo \"$GCP_SERVICE_ACCOUNT_JSON_B64\" | base64 -d > /tmp/gcp-service-account.json &&
+      export GOOGLE_APPLICATION_CREDENTIALS=/tmp/gcp-service-account.json &&
+      cd dbt && dbt --no-partial-parse run --profiles-dir . --target prod &&
+      dbt --no-partial-parse test --profiles-dir . --target prod &&
+      cd .. && python -m risk.run_risk_checks"
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.7
+      - key: PYTHONPATH
+        value: .
+      - key: GCP_PROJECT_ID
+        value: optimum-bonbon-296801
+      - key: BIGQUERY_DATASET
+        value: market_data
+      - key: GCP_SERVICE_ACCOUNT_JSON_B64
+        sync: false
