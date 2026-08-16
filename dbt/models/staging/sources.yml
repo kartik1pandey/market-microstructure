@@ -1,0 +1,11 @@
+version: 2
+
+sources:
+  - name: raw
+    database: "{{ 'dev' if target.name == 'dev' else target.database }}"
+    schema: "{{ 'raw' if target.name == 'dev' else target.schema }}"
+    tables:
+      - name: depth_ticks
+        identifier: "{{ 'depth_ticks' if target.name == 'dev' else 'raw_depth_ticks' }}"
+      - name: trades
+        identifier: "{{ 'trades' if target.name == 'dev' else 'raw_trades' }}"

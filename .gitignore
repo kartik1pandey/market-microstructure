@@ -19,6 +19,8 @@ data/
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
+dbt/profiles.yml
+dbt/.user.yml
 
 # Airflow
 dags/logs/
