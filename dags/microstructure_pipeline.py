@@ -37,6 +37,7 @@ with DAG(
     schedule="*/15 * * * *",
     start_date=datetime(2026, 8, 1),
     catchup=False,
+    max_active_runs=1,
     default_args=default_args,
     tags=["market-microstructure"],
 ) as dag:
