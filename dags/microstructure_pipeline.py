@@ -6,8 +6,14 @@ Order matters: the data-quality gate runs on the RAW data before dbt transforms 
 corrupt row is caught right where it entered the pipeline, not several models downstream.
 
 Two lanes after the shared GE gate: dev (DuckDB, fast local iteration) and prod (BigQuery,
-which the Looker Studio dashboard reads from AND which the risk check queries) - this also
-automates the BigQuery refresh that was previously done manually.
+which the Looker Studio dashboard reads from AND which the risk check queries).
+
+IMPORTANT: the prod lane does NOT run warehouse.load_raw anymore. Once the cloud ingestion
+worker (ingestion/binance/bigquery_writer.py, deployed on Render) is live, it streams
+straight into the prod raw_depth_ticks/raw_trades tables continuously - running the local
+loader against prod would CREATE OR REPLACE those tables from the local (dev-machine) lake
+and destroy everything the cloud worker has appended. The prod lane here only transforms
+whatever's already in BigQuery.
 """
 from __future__ import annotations
 
@@ -58,11 +64,6 @@ with DAG(
         bash_command=f"cd {DBT_DIR} && dbt --no-partial-parse test --profiles-dir . --target dev",
     )
 
-    load_raw_prod = BashOperator(
-        task_id="load_raw_prod",
-        bash_command=f"cd {PROJECT_DIR} && python -m warehouse.load_raw --target prod",
-    )
-
     dbt_run_prod = BashOperator(
         task_id="dbt_run_prod",
         bash_command=f"cd {DBT_DIR} && dbt --no-partial-parse run --profiles-dir . --target prod",
@@ -79,4 +80,4 @@ with DAG(
     )
 
     load_raw >> ge_checkpoint >> dbt_run >> dbt_test
-    ge_checkpoint >> load_raw_prod >> dbt_run_prod >> dbt_test_prod >> risk_check
+    ge_checkpoint >> dbt_run_prod >> dbt_test_prod >> risk_check

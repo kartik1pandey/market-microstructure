@@ -1,13 +1,22 @@
-"""Entry point: runs the Binance stream and writes ticks to the local Parquet lake.
+"""Entry point: runs the Binance stream and writes ticks to a lake backend.
 
 Usage: python -m ingestion.binance.main [SYMBOL]
 Stop with Ctrl+C - buffered rows are flushed before exit.
+
+Backend is chosen via the LAKE_BACKEND env var:
+- "parquet" (default): local Parquet lake, for local dev - see writer.py
+- "bigquery": streams straight to BigQuery, for continuous cloud deployment (e.g. Render),
+  where the local filesystem is ephemeral - see bigquery_writer.py. Needs GCP_PROJECT_ID and
+  BIGQUERY_DATASET env vars, plus GOOGLE_APPLICATION_CREDENTIALS pointing at a service account key.
 """
 from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import sys
+
+from dotenv import load_dotenv
 
 from .stream import BinanceStream
 from .writer import TickWriter
@@ -18,9 +27,23 @@ logger = logging.getLogger(__name__)
 DEPTH_LEVELS = 5
 
 
+def build_writer(table_name: str, symbol: str):
+    backend = os.environ.get("LAKE_BACKEND", "parquet")
+    if backend == "bigquery":
+        from .bigquery_writer import BigQueryTickWriter
+
+        return BigQueryTickWriter(
+            table_name,
+            symbol,
+            project_id=os.environ["GCP_PROJECT_ID"],
+            dataset=os.environ["BIGQUERY_DATASET"],
+        )
+    return TickWriter(table_name, symbol)
+
+
 async def run(symbol: str) -> None:
-    depth_writer = TickWriter("depth_ticks", symbol)
-    trade_writer = TickWriter("trades", symbol)
+    depth_writer = build_writer("depth_ticks", symbol)
+    trade_writer = build_writer("trades", symbol)
 
     async def on_depth(book, event):
         bid_prices, bid_qtys, ask_prices, ask_qtys = book.top_levels(DEPTH_LEVELS)
@@ -61,6 +84,7 @@ async def run(symbol: str) -> None:
 
 
 if __name__ == "__main__":
+    load_dotenv()
     target_symbol = sys.argv[1] if len(sys.argv) > 1 else "BTCUSDT"
     try:
         asyncio.run(run(target_symbol))

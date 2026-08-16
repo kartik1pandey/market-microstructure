@@ -3,9 +3,15 @@
 Raw tables are always a full mirror of the lake (CREATE OR REPLACE / WRITE_TRUNCATE) -
 no incremental logic here. Incremental/derived logic belongs in dbt models, not the loader.
 
+*** DANGER if the cloud deployment is live ***
+Once ingestion/binance/bigquery_writer.py is running continuously against a project
+(e.g. on Render), the prod raw_depth_ticks/raw_trades tables are being appended to live.
+Running `--target prod` here does a full CREATE OR REPLACE from the LOCAL lake and will
+WIPE OUT everything the cloud worker has streamed. Requires --confirm-prod-overwrite.
+
 Usage:
     python -m warehouse.load_raw --target dev
-    python -m warehouse.load_raw --target prod
+    python -m warehouse.load_raw --target prod --confirm-prod-overwrite
 """
 from __future__ import annotations
 
@@ -65,6 +71,11 @@ def main() -> None:
     parser.add_argument("--duckdb-path", default="dbt/dev.duckdb")
     parser.add_argument("--project-id", default="optimum-bonbon-296801")
     parser.add_argument("--dataset", default="market_data")
+    parser.add_argument(
+        "--confirm-prod-overwrite",
+        action="store_true",
+        help="Required for --target prod: acknowledges this will overwrite any live-streamed cloud data.",
+    )
     args = parser.parse_args()
 
     lake_root = Path(args.lake_root)
@@ -72,6 +83,12 @@ def main() -> None:
     if args.target == "dev":
         load_to_duckdb(lake_root, Path(args.duckdb_path), args.symbol)
     else:
+        if not args.confirm_prod_overwrite:
+            raise SystemExit(
+                "Refusing to run --target prod without --confirm-prod-overwrite - this does "
+                "a full CREATE OR REPLACE and will destroy any data streamed there by the "
+                "cloud ingestion worker. Pass --confirm-prod-overwrite if you're certain."
+            )
         load_to_bigquery(lake_root, args.project_id, args.dataset, args.symbol)
 
 
