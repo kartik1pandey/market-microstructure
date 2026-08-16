@@ -40,7 +40,7 @@ def naive_quote_fn(half_spread: float):
 def simulate_market_making(
     depth_df: pd.DataFrame, trades_df: pd.DataFrame, quote_fn, bucket: str = "1s"
 ) -> pd.DataFrame:
-    """quote_fn(mid_price, inventory, time_remaining_fraction) -> (bid, ask).
+    """quote_fn(mid_price, inventory, seconds_remaining) -> (bid, ask).
 
     Fill assumption (a documented simplification, not realistic queue-priority execution):
     within each time bucket, a sell-initiated trade at/below our bid fills our bid (we buy);
@@ -54,9 +54,7 @@ def simulate_market_making(
     trades["time"] = pd.to_datetime(trades["ts_ms"], unit="ms", utc=True)
     trades = trades.set_index("time")
 
-    session_start = mid.index[0]
     session_end = mid.index[-1]
-    total_seconds = max((session_end - session_start).total_seconds(), 1e-6)
     bucket_delta = pd.Timedelta(bucket)
 
     inventory = 0.0
@@ -64,8 +62,10 @@ def simulate_market_making(
     rows = []
 
     for t, mid_price in mid.items():
-        time_remaining = max((session_end - t).total_seconds(), 1e-6) / total_seconds
-        bid, ask = quote_fn(mid_price, inventory, time_remaining)
+        # seconds remaining, NOT a 0-1 fraction - must match sigma's per-second calibration
+        # units, since the AS formula's (T-t) has to be in the same time unit as sigma^2.
+        seconds_remaining = max((session_end - t).total_seconds(), 1e-6)
+        bid, ask = quote_fn(mid_price, inventory, seconds_remaining)
 
         window = trades.loc[(trades.index >= t) & (trades.index < t + bucket_delta)]
 
