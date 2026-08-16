@@ -19,8 +19,9 @@ data/
 dbt/target/
 dbt/dbt_packages/
 dbt/logs/
-dbt/profiles.yml
 dbt/.user.yml
+# dbt/profiles.yml is committed on purpose - it has no secrets, only a keyfile path that
+# reads from the GOOGLE_APPLICATION_CREDENTIALS env var. Needed in the repo for Render.
 
 # Airflow
 dags/logs/

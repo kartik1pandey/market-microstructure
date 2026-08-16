@@ -1,5 +1,3 @@
-# Copy this file to profiles.yml (gitignored) and adjust paths/project as needed.
-
 market_microstructure:
   target: dev
   outputs:
@@ -11,8 +9,8 @@ market_microstructure:
     prod:
       type: bigquery
       method: service-account
-      keyfile: ../gcp-service-account.json
-      project: your-gcp-project-id
+      keyfile: "{{ env_var('GOOGLE_APPLICATION_CREDENTIALS') }}"
+      project: optimum-bonbon-296801
       dataset: market_data
       location: asia-south1
       threads: 4
