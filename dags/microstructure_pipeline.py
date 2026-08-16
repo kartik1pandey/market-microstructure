@@ -4,6 +4,10 @@ streaming process, not a batch job) - this DAG only handles the scheduled batch 
 
 Order matters: the data-quality gate runs on the RAW data before dbt transforms it, so a
 corrupt row is caught right where it entered the pipeline, not several models downstream.
+
+Two lanes after the shared GE gate: dev (DuckDB, fast local iteration) and prod (BigQuery,
+which the Looker Studio dashboard reads from AND which the risk check queries) - this also
+automates the BigQuery refresh that was previously done manually.
 """
 from __future__ import annotations
 
@@ -54,4 +58,25 @@ with DAG(
         bash_command=f"cd {DBT_DIR} && dbt --no-partial-parse test --profiles-dir . --target dev",
     )
 
+    load_raw_prod = BashOperator(
+        task_id="load_raw_prod",
+        bash_command=f"cd {PROJECT_DIR} && python -m warehouse.load_raw --target prod",
+    )
+
+    dbt_run_prod = BashOperator(
+        task_id="dbt_run_prod",
+        bash_command=f"cd {DBT_DIR} && dbt --no-partial-parse run --profiles-dir . --target prod",
+    )
+
+    dbt_test_prod = BashOperator(
+        task_id="dbt_test_prod",
+        bash_command=f"cd {DBT_DIR} && dbt --no-partial-parse test --profiles-dir . --target prod",
+    )
+
+    risk_check = BashOperator(
+        task_id="risk_check",
+        bash_command=f"cd {PROJECT_DIR} && python -m risk.run_risk_checks",
+    )
+
     load_raw >> ge_checkpoint >> dbt_run >> dbt_test
+    ge_checkpoint >> load_raw_prod >> dbt_run_prod >> dbt_test_prod >> risk_check
