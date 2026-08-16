@@ -113,6 +113,11 @@ select
     bucket_id,
     bucket_start_ts,
     bucket_end_ts,
+{% if target.type == 'bigquery' %}
+    timestamp_millis(bucket_end_ts) as bucket_end_time,
+{% else %}
+    to_timestamp(bucket_end_ts / 1000.0) as bucket_end_time,
+{% endif %}
     bucket_volume,
     bucket_close_price,
     price_change,
