@@ -18,3 +18,4 @@ dbt-bigquery==1.8.3
 great_expectations==1.20.0
 
 scipy==1.14.1
+matplotlib==3.11.1
